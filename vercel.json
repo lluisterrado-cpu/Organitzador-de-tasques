@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/professor", "destination": "/teacher-dashboard.html" },
+    { "source": "/",          "destination": "/sprint-team.html" }
+  ]
+}
