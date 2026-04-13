@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard del Professor — Sprint d'Equip</title>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { margin:0; font-family: system-ui,-apple-system,'Segoe UI',sans-serif; background:#0f172a; color:#f1f5f9; }
+    input,button,select,textarea { font-family:inherit; font-size:15px; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes pulse2 { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .pulse2 { animation: pulse2 1.5s ease-in-out infinite; }
+    @keyframes slideUp { from{transform:translateY(20px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+    .slide-up { animation: slideUp 0.3s ease; }
+    ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-track { background:#1e293b; } ::-webkit-scrollbar-thumb { background:#475569; border-radius:3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ─── Firebase Config (MATEIXA que a sprint-team.html) ────────────────────
+    const FIREBASE_CONFIG = {
+      apiKey:      "AIzaSyA3c_TQWkpX_ZxjoE5xCKgWxTaI_5ceLPE",
+      databaseURL: "https://organitzador-de-tasques-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId:   "organitzador-de-tasques",
+    };
+    // ─────────────────────────────────────────────────────────────────────────
+    const FB_ENABLED = !!(FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith("POSA"));
+    let fbDb = null;
+    if (FB_ENABLED) {
+      try {
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        fbDb = firebase.database();
+      } catch(e) { console.warn("Firebase init error:", e); }
+    }
+
+    // ─── Constants compartits amb sprint-team.html ────────────────────────────
+    const S = { PENDENT:"pendent", EN_CURS:"en_curs", FET:"fet" };
+    const fmt = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+    const fmtMin = m => m==null?"—":m<60?`${m}min`:`${Math.floor(m/60)}h${m%60?m%60+"min":""}`;
+    const PHASE_LABELS = { setup:"Configuració", daily:"Planificació", sprint:"Sprint", checkout:"Revisió", summary:"Resum" };
+    const PHASE_COLORS = {
+      setup:    "bg-gray-600",
+      daily:    "bg-blue-500",
+      sprint:   "bg-orange-500",
+      checkout: "bg-green-500",
+      summary:  "bg-indigo-500",
+    };
+
+    // Icones SVG
+    const Ic = {
+      Warn:   ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+      Check:  ({s=12,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className={c}><polyline points="20 6 9 17 4 12"/></svg>,
+      X:      ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={c}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+      Plus:   ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={c}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+      Wifi:   ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>,
+      WifiOff:({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a11 11 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>,
+      Refresh:({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>,
+      Clock:  ({s=14,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+      Trash:  ({s=14,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>,
+      QR:     ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="7" y="7" width="1" height="1" fill="currentColor"/><rect x="18" y="7" width="1" height="1" fill="currentColor"/><rect x="7" y="18" width="1" height="1" fill="currentColor"/><line x1="14" y1="14" x2="14" y2="14"/><line x1="18" y1="14" x2="22" y2="14"/><line x1="14" y1="18" x2="14" y2="22"/><line x1="18" y1="18" x2="18" y2="22"/></svg>,
+      Info:   ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>,
+    };
+
+    // ─── Utilitats ────────────────────────────────────────────────────────────
+    function decodeGroupState(code) {
+      try { return JSON.parse(atob(code.trim())); } catch { return null; }
+    }
+
+    function taskStats(raw=[]) {
+      const tasks = Array.isArray(raw) ? raw : Object.values(raw || {});
+      return {
+        total:     tasks.length,
+        pendent:   tasks.filter(t=>t.status===S.PENDENT&&t.assignee).length,
+        unassigned:tasks.filter(t=>!t.assignee).length,
+        enCurs:    tasks.filter(t=>t.status===S.EN_CURS).length,
+        fet:       tasks.filter(t=>t.status===S.FET&&!t.validated).length,
+        validated: tasks.filter(t=>t.validated).length,
+        blockers:  tasks.filter(t=>t.blocker&&t.status!==S.FET),
+      };
+    }
+
+    // ─── GroupCard ────────────────────────────────────────────────────────────
+    function GroupCard({ group, onRemove }) {
+      const [expanded, setExpanded] = useState(false);
+      const st = taskStats(group.tasks);
+      const pct = st.total>0?Math.round((st.validated/st.total)*100):0;
+      const phaseBg = PHASE_COLORS[group.phase]||"bg-gray-600";
+      const age = group.timestamp ? Math.round((Date.now()-group.timestamp)/1000) : null;
+      const ageStr = age==null?"—":age<60?`Ara`:`Fa ${Math.round(age/60)} min`;
+      const timerStr = ["daily","sprint","checkout"].includes(group.phase)&&group.timer>0?fmt(group.timer):null;
+
+      return (
+        <div className={`bg-slate-800 rounded-2xl overflow-hidden fade-in border ${st.blockers.length>0?"border-orange-500/50":"border-slate-700"}`}>
+          {/* Capçalera */}
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-white text-base truncate">{group.groupName||group.projectName}</h3>
+                  {group.groupName&&group.projectName!==group.groupName&&(
+                    <span className="text-slate-400 text-xs">{group.projectName}</span>
+                  )}
+                </div>
+                <p className="text-slate-400 text-xs mt-0.5">{(group.members||[]).join(", ")}</p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full text-white ${phaseBg}`}>
+                  {PHASE_LABELS[group.phase]||group.phase}
+                  {timerStr&&` · ${timerStr}`}
+                </span>
+              </div>
+            </div>
+
+            {/* Stats tasques */}
+            <div className="grid grid-cols-5 gap-1.5 mb-3 text-center">
+              {[
+                ["Pend.",st.pendent,"text-slate-400"],
+                ["Curs", st.enCurs, "text-orange-400"],
+                ["Fet",  st.fet,   "text-blue-400"],
+                ["Val.", st.validated,"text-green-400"],
+                ["Lliures",st.unassigned,"text-purple-400"],
+              ].map(([l,n,c])=>(
+                <div key={l} className="bg-slate-700/50 rounded-lg py-1.5">
+                  <div className={`text-xl font-extrabold ${c}`}>{n}</div>
+                  <div className="text-slate-500 text-xs leading-tight">{l}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Barra progrés */}
+            {st.total>0&&(
+              <div className="mb-3">
+                <div className="flex justify-between text-xs text-slate-500 mb-1">
+                  <span>Validades</span><span>{pct}%</span>
+                </div>
+                <div className="h-2 bg-slate-700 rounded-full overflow-hidden flex">
+                  {/* Fraccions: fet (blau), validat (verd) */}
+                  <div className="h-full bg-blue-500/70" style={{width:`${Math.round((st.fet/st.total)*100)}%`}}/>
+                  <div className="h-full bg-green-500" style={{width:`${Math.round((st.validated/st.total)*100)}%`}}/>
+                </div>
+                <div className="flex text-xs text-slate-600 mt-0.5 gap-2">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500/70 inline-block"/>Fet</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>Validat</span>
+                </div>
+              </div>
+            )}
+
+            {/* Blocadors */}
+            {st.blockers.length>0&&(
+              <div className="bg-orange-950/50 border border-orange-700/50 rounded-xl p-2.5 mb-3">
+                <p className="text-orange-300 text-xs font-bold mb-1 flex items-center gap-1">
+                  <Ic.Warn s={12}/> {st.blockers.length} blocador{st.blockers.length>1?"s":""} actiu{st.blockers.length>1?"s":""}
+                </p>
+                {st.blockers.map((t,i)=>(
+                  <p key={i} className="text-orange-200 text-xs">· <span className="font-medium">{t.assignee}</span>: {t.blockerText||t.text}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 text-xs">{ageStr}</span>
+              <div className="flex items-center gap-2">
+                <button onClick={()=>setExpanded(!expanded)} className="text-xs text-slate-400 hover:text-white font-medium">
+                  {expanded?"Amagar ▲":"Detall ▼"}
+                </button>
+                <button onClick={onRemove} className="text-slate-600 hover:text-red-400 p-1">
+                  <Ic.Trash s={14}/>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tasques expandides */}
+          {expanded&&(
+            <div className="border-t border-slate-700 p-4 space-y-2 fade-in">
+              {(group.tasks||[]).length===0&&<p className="text-slate-500 text-sm">Sense tasques</p>}
+              {(group.tasks||[]).map((t,i)=>(
+                <div key={i} className={`rounded-xl p-2.5 text-sm ${t.validated?"bg-green-900/30 border border-green-700/30":t.status===S.FET?"bg-blue-900/30 border border-blue-700/30":t.status===S.EN_CURS?"bg-orange-900/30 border border-orange-700/30":"bg-slate-700/50"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-slate-200 flex-1">{t.text}</p>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${t.validated?"bg-green-700/50 text-green-300":t.status===S.FET?"bg-blue-700/50 text-blue-300":t.status===S.EN_CURS?"bg-orange-700/50 text-orange-300":"bg-slate-600 text-slate-300"}`}>
+                      {t.validated?"✓ Val.":t.status===S.FET?"Fet":t.status===S.EN_CURS?"En curs":t.assignee?"Pendent":"Lliure"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    {t.assignee&&<span className="text-xs text-slate-400">{t.assignee}</span>}
+                    {!t.assignee&&<span className="text-xs text-purple-400 font-semibold">Sense assignar</span>}
+                    {t.timeEstimate&&<span className="text-xs text-slate-500">Est:{t.timeEstimate}min</span>}
+                    {t.actualMinutes!=null&&(
+                      <span className={`text-xs font-semibold ${t.actualMinutes>t.timeEstimate*1.3?"text-red-400":"text-green-400"}`}>
+                        Real:{t.actualMinutes}min
+                      </span>
+                    )}
+                    {t.blocker&&<span className="text-xs text-orange-400 flex items-center gap-0.5"><Ic.Warn s={10}/> Blocador</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Modal Afegir Grup ────────────────────────────────────────────────────
+    function ImportModal({ onImport, onClose }) {
+      const [code, setCode] = useState("");
+      const [error, setError] = useState("");
+
+      const tryImport = () => {
+        const state = decodeGroupState(code);
+        if (!state || !state.groupId) { setError("Codi invàlid. Comprova que l'has copiat sencer."); return; }
+        onImport(state);
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+          <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-md border border-slate-700 slide-up">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-white text-lg">Afegir grup manualment</h3>
+              <button onClick={onClose} className="text-slate-400 hover:text-white"><Ic.X s={20}/></button>
+            </div>
+
+            <div className="bg-blue-900/40 border border-blue-700/40 rounded-xl p-3 mb-4">
+              <p className="text-blue-300 text-sm font-semibold mb-1 flex items-center gap-1.5"><Ic.Info s={14}/> Com obtenir el codi</p>
+              <p className="text-blue-200 text-sm">A la pantalla dels alumnes, premeu el botó <strong>"Compartir amb professor"</strong> i copieu el codi que apareix.</p>
+            </div>
+
+            <textarea
+              className="w-full bg-slate-700 border-2 border-slate-600 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 font-mono h-28 resize-none"
+              placeholder="Enganxeu aquí el codi del grup..."
+              value={code}
+              onChange={e=>{setCode(e.target.value);setError("");}}
+            />
+            {error&&<p className="text-red-400 text-sm mt-1">{error}</p>}
+
+            <button onClick={tryImport} disabled={!code.trim()}
+              className={`w-full mt-4 py-3 rounded-xl font-bold text-base ${code.trim()?"bg-blue-500 text-white hover:bg-blue-600":"bg-slate-700 text-slate-500 cursor-not-allowed"}`}>
+              Afegir grup
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── PastSprintRow ────────────────────────────────────────────────────────
+    function PastSprintRow({ session, onRemove }) {
+      const [expanded, setExpanded] = useState(false);
+      const tasks  = session.tasks || [];
+      const val    = tasks.filter(t=>t.validated).length;
+      const pct    = tasks.length>0?Math.round((val/tasks.length)*100):0;
+      const date   = session.timestamp?new Date(session.timestamp).toLocaleDateString("ca",{day:"numeric",month:"short"}):"—";
+      const phase  = PHASE_LABELS[session.phase]||session.phase;
+      const st     = taskStats(tasks);
+
+      return (
+        <div className="rounded-xl overflow-hidden bg-slate-700/40 border border-slate-600/40">
+          <button onClick={()=>setExpanded(!expanded)} className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-700/60 transition-colors">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-extrabold text-sm flex-shrink-0
+              ${pct>=80?"bg-green-900/60 text-green-400":pct>=50?"bg-orange-900/60 text-orange-400":"bg-red-900/60 text-red-400"}`}>
+              {pct}%
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm text-slate-200 font-semibold">{date}</p>
+              <p className="text-xs text-slate-500">{val}/{tasks.length} validades · {phase}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 text-xs">{expanded?"▲":"▼"}</span>
+              <button onClick={e=>{e.stopPropagation();onRemove();}} className="text-slate-600 hover:text-red-400 p-1">
+                <Ic.Trash s={12}/>
+              </button>
+            </div>
+          </button>
+          {expanded && (
+            <div className="border-t border-slate-600/40 p-3 space-y-2 fade-in">
+              {tasks.length===0 && <p className="text-slate-500 text-xs">Sense tasques</p>}
+              {tasks.map((t,i)=>(
+                <div key={i} className={`rounded-lg p-2 text-xs ${t.validated?"bg-green-900/30":t.status===S.FET?"bg-blue-900/30":t.status===S.EN_CURS?"bg-orange-900/30":"bg-slate-700/50"}`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${t.validated?"bg-green-400":t.status===S.FET?"bg-blue-400":t.status===S.EN_CURS?"bg-orange-400":"bg-slate-500"}`}/>
+                    <span className="text-slate-200 flex-1">{t.text}</span>
+                    {t.assignee&&<span className="text-slate-500">{t.assignee}</span>}
+                    {t.timeEstimate&&<span className="text-slate-600">Est:{t.timeEstimate}m</span>}
+                    {t.actualMinutes!=null&&<span className={t.actualMinutes>t.timeEstimate*1.3?"text-red-400":"text-green-400"}>Real:{t.actualMinutes}m</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── LatestSprintDetail ───────────────────────────────────────────────────
+    function LatestSprintDetail({ session, onRemove }) {
+      const [expanded, setExpanded] = useState(false);
+      const tasks = session.tasks || [];
+      return (
+        <div>
+          <div className="flex items-center justify-between">
+            <button onClick={()=>setExpanded(!expanded)}
+              className="text-xs text-slate-400 hover:text-white font-semibold flex items-center gap-1">
+              {expanded?"Amagar tasques ▲":"Veure tasques ▼"}
+            </button>
+            <button onClick={onRemove} className="text-slate-600 hover:text-red-400 p-1" title="Eliminar sessió">
+              <Ic.Trash s={13}/>
+            </button>
+          </div>
+          {expanded&&(
+            <div className="mt-2 space-y-1.5 fade-in">
+              {tasks.length===0&&<p className="text-slate-500 text-xs">Sense tasques</p>}
+              {tasks.map((t,i)=>(
+                <div key={i} className={`rounded-lg p-2 text-xs flex items-start gap-2
+                  ${t.validated?"bg-green-900/30":t.status===S.FET?"bg-blue-900/30":t.status===S.EN_CURS?"bg-orange-900/30":"bg-slate-700/50"}`}>
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${t.validated?"bg-green-400":t.status===S.FET?"bg-blue-400":t.status===S.EN_CURS?"bg-orange-400":"bg-slate-500"}`}/>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-slate-200">{t.text}</span>
+                    <div className="flex gap-2 mt-0.5 flex-wrap">
+                      {t.assignee&&<span className="text-slate-500">{t.assignee}</span>}
+                      {!t.assignee&&<span className="text-purple-400">Lliure</span>}
+                      {t.timeEstimate&&<span className="text-slate-600">Est:{t.timeEstimate}m</span>}
+                      {t.actualMinutes!=null&&<span className={t.actualMinutes>t.timeEstimate*1.3?"text-red-400":"text-green-400"}>Real:{t.actualMinutes}m</span>}
+                      {t.blocker&&<span className="text-orange-400 flex items-center gap-0.5"><Ic.Warn s={10}/> Blocador</span>}
+                    </div>
+                  </div>
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-semibold flex-shrink-0
+                    ${t.validated?"bg-green-700/50 text-green-300":t.status===S.FET?"bg-blue-700/50 text-blue-300":t.status===S.EN_CURS?"bg-orange-700/50 text-orange-300":"bg-slate-600 text-slate-400"}`}>
+                    {t.validated?"Val.":t.status===S.FET?"Fet":t.status===S.EN_CURS?"Curs":t.assignee?"Pend.":"Lliure"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── GroupCluster ─────────────────────────────────────────────────────────
+    function GroupCluster({ groupName, sessions, onRemoveSession }) {
+      const [showHistory, setShowHistory]     = useState(false);
+      const [showMembers, setShowMembers]     = useState(false);
+      const latest = sessions[0];
+      const past   = sessions.slice(1);
+
+      // Estadístiques globals del grup (totes les sessions)
+      const completedSessions = sessions.filter(s=>s.phase==="summary"||s.phase==="checkout");
+      const avgPct = completedSessions.length>0
+        ? Math.round(completedSessions.reduce((a,s)=>{
+            const t=s.tasks||[]; return a+(t.length>0?(t.filter(x=>x.validated).length/t.length)*100:0);
+          },0)/completedSessions.length)
+        : null;
+
+      const st      = taskStats(latest.tasks);
+      const phaseBg = PHASE_COLORS[latest.phase]||"bg-gray-600";
+      const members = latest.members||[];
+      const latestDate = latest.timestamp?new Date(latest.timestamp).toLocaleDateString("ca",{day:"numeric",month:"short",weekday:"short"}):"—";
+      const timerStr = ["daily","sprint","checkout"].includes(latest.phase)&&latest.timer>0?fmt(latest.timer):null;
+      const age = latest.timestamp?Math.round((Date.now()-latest.timestamp)/1000):null;
+      const ageStr = age==null?"—":age<60?"Ara":age<3600?`Fa ${Math.round(age/60)}min`:`Fa ${Math.round(age/3600)}h`;
+
+      return (
+        <div className={`bg-slate-800 rounded-2xl overflow-hidden border ${st.blockers.length>0?"border-orange-500/50":"border-slate-700"}`}>
+
+          {/* Capçalera del grup */}
+          <div className="px-4 pt-4 pb-3 border-b border-slate-700/50">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-white text-base">{groupName}</h3>
+                <p className="text-slate-400 text-xs mt-0.5">{members.join(", ")}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {avgPct!==null&&(
+                  <div className="text-right">
+                    <div className={`text-xl font-extrabold ${avgPct>=80?"text-green-400":avgPct>=50?"text-orange-400":"text-red-400"}`}>{avgPct}%</div>
+                    <p className="text-slate-500 text-xs">{completedSessions.length} sprint{completedSessions.length!==1?"s":""}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Sprint actual / més recent */}
+          <div className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full text-white ${phaseBg}`}>
+                {PHASE_LABELS[latest.phase]||latest.phase}{timerStr&&` · ${timerStr}`}
+              </span>
+              <span className="text-slate-500 text-xs">{latestDate} · {ageStr}</span>
+            </div>
+
+            {/* Stats tasques */}
+            <div className="grid grid-cols-5 gap-1.5 mb-3 text-center">
+              {[["Pend.",st.pendent,"text-slate-400"],["Curs",st.enCurs,"text-orange-400"],
+                ["Fet",st.fet,"text-blue-400"],["Val.",st.validated,"text-green-400"],
+                ["Lliures",st.unassigned,"text-purple-400"]].map(([l,n,c])=>(
+                <div key={l} className="bg-slate-700/50 rounded-lg py-1.5">
+                  <div className={`text-lg font-extrabold ${c}`}>{n}</div>
+                  <div className="text-slate-500 text-xs leading-tight">{l}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Barra progrés */}
+            {st.total>0&&(
+              <div className="h-2 bg-slate-700 rounded-full overflow-hidden flex mb-3">
+                <div className="h-full bg-blue-500/70" style={{width:`${Math.round((st.fet/st.total)*100)}%`}}/>
+                <div className="h-full bg-green-500" style={{width:`${Math.round((st.validated/st.total)*100)}%`}}/>
+              </div>
+            )}
+
+            {/* Blocadors */}
+            {st.blockers.length>0&&(
+              <div className="bg-orange-950/50 border border-orange-700/50 rounded-xl p-2.5 mb-3">
+                <p className="text-orange-300 text-xs font-bold mb-1 flex items-center gap-1">
+                  <Ic.Warn s={12}/> {st.blockers.length} blocador{st.blockers.length>1?"s":""}
+                </p>
+                {st.blockers.map((t,i)=>(
+                  <p key={i} className="text-orange-200 text-xs">· <span className="font-medium">{t.assignee}</span>: {t.blockerText||t.text}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Detall tasques sprint actual (expandible) */}
+            <LatestSprintDetail session={latest} onRemove={()=>onRemoveSession(latest.groupId)}/>
+          </div>
+
+          {/* Vista per membre (totes les sessions) */}
+          <div className="border-t border-slate-700">
+            <button onClick={()=>setShowMembers(!showMembers)}
+              className="w-full px-4 py-3 flex items-center justify-between text-slate-400 hover:text-white text-sm font-semibold transition-colors">
+              <span>Per alumne</span>
+              <span>{showMembers?"▲":"▼"}</span>
+            </button>
+            {showMembers&&(()=>{
+              // Agrupa totes les tasques de totes les sessions per membre
+              const byMember = {};
+              sessions.forEach(s=>{
+                const date = s.timestamp ? new Date(s.timestamp).toLocaleDateString("ca",{day:"numeric",month:"short"}) : "—";
+                (s.tasks||[]).forEach(t=>{
+                  if (!t.assignee) return;
+                  if (!byMember[t.assignee]) byMember[t.assignee]=[];
+                  byMember[t.assignee].push({...t, _date:date});
+                });
+              });
+              return (
+                <div className="px-4 pb-4 space-y-4 fade-in">
+                  {Object.entries(byMember).sort(([a],[b])=>a.localeCompare(b)).map(([member,mTasks])=>{
+                    const done = mTasks.filter(t=>t.validated||t.status===S.FET).length;
+                    const val  = mTasks.filter(t=>t.validated).length;
+                    return (
+                      <div key={member}>
+                        {/* Capçalera membre */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                            {member[0].toUpperCase()}
+                          </div>
+                          <span className="font-bold text-white text-sm">{member}</span>
+                          <span className="text-slate-400 text-xs ml-auto">{done} fetes · {val} validades</span>
+                        </div>
+                        {/* Tasques del membre */}
+                        <div className="space-y-1 pl-9">
+                          {mTasks.length===0 && <p className="text-slate-500 text-xs">Sense tasques</p>}
+                          {mTasks.map((t,i)=>(
+                            <div key={i} className={`rounded-lg px-2.5 py-2 text-xs flex items-start gap-2
+                              ${t.validated?"bg-green-900/30 border border-green-800/30":t.status===S.FET?"bg-blue-900/30 border border-blue-800/30":t.status===S.EN_CURS?"bg-orange-900/30":"bg-slate-700/40"}`}>
+                              <div className={`w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0
+                                ${t.validated?"bg-green-400":t.status===S.FET?"bg-blue-400":t.status===S.EN_CURS?"bg-orange-400":"bg-slate-500"}`}/>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-slate-200">{t.text}</span>
+                                <div className="flex gap-2 mt-0.5 flex-wrap">
+                                  <span className="text-slate-500">{t._date}</span>
+                                  {t.timeEstimate&&t.actualMinutes!=null&&(
+                                    <span className={`font-semibold ${t.actualMinutes>t.timeEstimate*1.3?"text-red-400":t.actualMinutes<t.timeEstimate*0.8?"text-blue-400":"text-green-400"}`}>
+                                      {t.timeEstimate}m→{t.actualMinutes}m
+                                    </span>
+                                  )}
+                                  {t.blocker&&<span className="text-orange-400">⚠ Blocador</span>}
+                                </div>
+                              </div>
+                              <span className={`px-1.5 py-0.5 rounded font-semibold flex-shrink-0
+                                ${t.validated?"bg-green-700/50 text-green-300":t.status===S.FET?"bg-blue-700/50 text-blue-300":t.status===S.EN_CURS?"bg-orange-700/50 text-orange-300":"bg-slate-600 text-slate-400"}`}>
+                                {t.validated?"Val.":t.status===S.FET?"Fet":t.status===S.EN_CURS?"Curs":"Pend."}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {Object.keys(byMember).length===0&&<p className="text-slate-500 text-sm">Sense tasques assignades</p>}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Historial sessions anteriors */}
+          {past.length>0&&(
+            <div className="border-t border-slate-700">
+              <button onClick={()=>setShowHistory(!showHistory)}
+                className="w-full px-4 py-3 flex items-center justify-between text-slate-400 hover:text-white text-sm font-semibold transition-colors">
+                <span>Sessions anteriors ({past.length})</span>
+                <span>{showHistory?"▲":"▼"}</span>
+              </button>
+              {showHistory&&(
+                <div className="px-4 pb-4 space-y-2 fade-in">
+                  {past.map(s=>(
+                    <PastSprintRow key={s.groupId} session={s} onRemove={()=>onRemoveSession(s.groupId)}/>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── App Principal ────────────────────────────────────────────────────────
+    function TeacherDashboard() {
+      const [groups, setGroups]         = useState({});
+      const [showImport, setShowImport] = useState(false);
+      const [connected, setConnected]   = useState(false);
+      const [lastSync, setLastSync]     = useState(null);
+      const [classroomName, setClassroomName] = useState("Aula");
+      const [editingName, setEditingName]     = useState(false);
+
+      // Firebase: escolta totes les sessions en temps real
+      useEffect(() => {
+        if (!FB_ENABLED || !fbDb) return;
+        const ref = fbDb.ref('sprint_sessions');
+        ref.on('value', snapshot => {
+          const raw = snapshot.val() || {};
+          // Firebase converteix arrays a objectes — normalitzem de tornada
+          const toArr = v => Array.isArray(v) ? v : Object.values(v || {});
+          const data = {};
+          Object.entries(raw).forEach(([id, s]) => {
+            data[id] = { ...s, tasks: toArr(s.tasks), members: toArr(s.members) };
+          });
+          setGroups(data);
+          setConnected(true);
+          setLastSync(new Date());
+        }, err => {
+          console.warn("Firebase listen error:", err);
+          setConnected(false);
+        });
+        return () => ref.off('value');
+      }, []);
+
+      const importGroup = state => {
+        setGroups(prev => ({ ...prev, [state.groupId]: state }));
+        setLastSync(new Date());
+        setShowImport(false);
+      };
+
+      const removeSession = groupId => {
+        if (FB_ENABLED && fbDb) {
+          try { fbDb.ref(`sprint_sessions/${groupId}`).remove(); } catch {}
+          // Firebase onValue actualitzarà groups automàticament
+        } else {
+          setGroups(prev => { const n = { ...prev }; delete n[groupId]; return n; });
+        }
+      };
+
+      // Agrupa sessions per groupName (o projectName si no hi ha groupName)
+      const sessionsByGroup = {};
+      Object.values(groups).forEach(s => {
+        const name = s.groupName || s.projectName || "Grup sense nom";
+        if (!sessionsByGroup[name]) sessionsByGroup[name] = [];
+        sessionsByGroup[name].push(s);
+      });
+      // Ordena cada grup per timestamp (més recent primer)
+      Object.values(sessionsByGroup).forEach(arr => arr.sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)));
+      const groupNames = Object.keys(sessionsByGroup).sort();
+
+      // Per al resum de fases: usa la sessió més recent de cada grup
+      const latestPerGroup = groupNames.map(n => sessionsByGroup[n][0]);
+      const phaseSummary = {};
+      latestPerGroup.forEach(s => { phaseSummary[s.phase] = (phaseSummary[s.phase]||0)+1; });
+      const totalBlockers = latestPerGroup.reduce((a,s)=>a+(taskStats(s.tasks).blockers.length),0);
+
+      return (
+        <div className="min-h-screen bg-slate-900">
+          {/* Header */}
+          <div className="bg-slate-800 border-b border-slate-700 px-4 py-3 sticky top-0 z-10">
+            <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center flex-shrink-0 text-white font-bold text-sm">P</div>
+                <div>
+                  {editingName ? (
+                    <input autoFocus className="bg-slate-700 rounded-lg px-2 py-1 text-white text-base font-bold focus:outline-none border border-slate-500"
+                      value={classroomName} onChange={e=>setClassroomName(e.target.value)} onBlur={()=>setEditingName(false)} onKeyDown={e=>e.key==="Enter"&&setEditingName(false)}/>
+                  ) : (
+                    <button onClick={()=>setEditingName(true)} className="font-bold text-white text-base hover:text-indigo-300">{classroomName} ✏️</button>
+                  )}
+                  <p className="text-slate-400 text-xs">{groupNames.length} grup{groupNames.length!==1?"s":""} · Dashboard del professor</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Indicador connexió Firebase */}
+                {FB_ENABLED ? (
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${connected?"bg-green-900/50 text-green-300 border border-green-700/50":"bg-slate-700 text-slate-400"}`}>
+                    {connected
+                      ? <><span className="w-2 h-2 rounded-full bg-green-400 pulse2 inline-block"/><Ic.Wifi s={14}/> En viu</>
+                      : <><Ic.Wifi s={14}/> Connectant...</>}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-orange-900/50 text-orange-300 border border-orange-700/50">
+                    <Ic.WifiOff s={14}/> Firebase no configurat
+                  </div>
+                )}
+                <button onClick={()=>setShowImport(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold text-white">
+                  <Ic.Plus s={16}/> Afegir grup
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-6xl mx-auto px-4 py-6">
+            {/* Avís Firebase */}
+            {!FB_ENABLED && (
+              <div className="bg-orange-900/30 border border-orange-700/50 rounded-2xl p-4 mb-6">
+                <p className="text-orange-300 text-sm font-bold mb-1 flex items-center gap-1.5"><Ic.Warn s={16}/> Firebase no configurat</p>
+                <p className="text-orange-200 text-sm">Per veure els grups en temps real, afegeix la teva configuració de Firebase als dos fitxers HTML (sprint-team.html i teacher-dashboard.html). Busca la secció <code className="bg-orange-900/50 px-1 rounded">FIREBASE_CONFIG</code> a l'inici de l'script.</p>
+                <p className="text-orange-400 text-xs mt-2">Mentre tant, pots afegir grups manualment amb "+ Afegir grup" (codi que generen els alumnes des de sprint-team.html).</p>
+              </div>
+            )}
+            {FB_ENABLED && lastSync && (
+              <p className="text-slate-500 text-xs mb-3">Última actualització: {lastSync.toLocaleTimeString("ca")}</p>
+            )}
+
+            {/* Resum de fases si hi ha grups */}
+            {groupNames.length>0&&(
+              <div className="bg-slate-800 rounded-2xl p-4 mb-6 border border-slate-700">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-white">Estat de la classe</h3>
+                  {totalBlockers>0&&(
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-900/50 border border-orange-700/50 text-orange-300 text-sm font-bold">
+                      <Ic.Warn s={14}/> {totalBlockers} blocador{totalBlockers>1?"s":""}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {Object.entries(PHASE_LABELS).map(([phase,label])=>{
+                    const count = phaseSummary[phase]||0;
+                    if (!count) return null;
+                    return (
+                      <div key={phase} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold text-white ${PHASE_COLORS[phase]}`}>
+                        {count} {label}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Taula resum per grup (sprint actual) */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-slate-400 text-xs uppercase tracking-wider">
+                        <th className="text-left py-1 pr-4">Grup</th>
+                        <th className="text-left py-1 pr-4">Fase actual</th>
+                        <th className="text-center py-1 pr-4">Fetes</th>
+                        <th className="text-center py-1 pr-4">Val.</th>
+                        <th className="text-center py-1 pr-4">Sprints</th>
+                        <th className="text-center py-1">Blocs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupNames.map(name=>{
+                        const sessions = sessionsByGroup[name];
+                        const latest = sessions[0];
+                        const st = taskStats(latest.tasks);
+                        const completedCount = sessions.filter(s=>s.phase==="summary").length;
+                        return (
+                          <tr key={name} className="border-t border-slate-700/50">
+                            <td className="py-1.5 pr-4 font-semibold text-white">{name}</td>
+                            <td className="py-1.5 pr-4">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-bold text-white ${PHASE_COLORS[latest.phase]||"bg-gray-600"}`}>
+                                {PHASE_LABELS[latest.phase]||latest.phase}
+                              </span>
+                            </td>
+                            <td className="py-1.5 pr-4 text-center">
+                              <span className="text-blue-300 font-bold">{st.fet}</span>
+                              <span className="text-slate-500">/{st.total}</span>
+                            </td>
+                            <td className="py-1.5 pr-4 text-center">
+                              <span className="text-green-300 font-bold">{st.validated}</span>
+                              <span className="text-slate-500">/{st.total}</span>
+                            </td>
+                            <td className="py-1.5 pr-4 text-center text-slate-400">{sessions.length}</td>
+                            <td className="py-1.5 text-center">
+                              {st.blockers.length>0
+                                ? <span className="text-orange-400 font-bold flex items-center justify-center gap-1"><Ic.Warn s={12}/>{st.blockers.length}</span>
+                                : <span className="text-slate-600">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Targetes de grup */}
+            {groupNames.length===0 ? (
+              <div className="text-center py-20 text-slate-500">
+                <div className="text-6xl mb-4">👀</div>
+                <p className="text-xl font-bold text-slate-400 mb-2">Cap grup connectat</p>
+                <p className="text-sm mb-6">{FB_ENABLED ? "Els grups apareixeran aquí automàticament quan els alumnes obrin sprint-team.html i iniciïn una sessió." : "Configura Firebase per veure els grups en temps real, o afegeix-los manualment amb el codi que generen els alumnes."}</p>
+                <button onClick={()=>setShowImport(true)} className="px-6 py-3 bg-indigo-500 rounded-xl font-bold text-white hover:bg-indigo-600">
+                  + Afegir primer grup
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {groupNames.map(name=>(
+                  <GroupCluster key={name} groupName={name} sessions={sessionsByGroup[name]} onRemoveSession={removeSession}/>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showImport&&<ImportModal onImport={importGroup} onClose={()=>setShowImport(false)}/>}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<TeacherDashboard/>);
+  </script>
+</body>
+</html>

@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Sprint d'Equip</title>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: #f9fafb; }
+    input, button, textarea, select { font-family: inherit; font-size: 16px; }
+    @keyframes flashGreen { 0%,100%{background-color:inherit;} 30%{background-color:#bbf7d0;transform:scale(1.04);} }
+    .flash { animation: flashGreen 0.8s ease; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+    .pulse { animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
+    .fade-in { animation: fadeIn 0.35s ease; }
+    @keyframes popIn { 0%{transform:scale(0.8);opacity:0;} 100%{transform:scale(1);opacity:1;} }
+    .pop-in { animation: popIn 0.25s cubic-bezier(.17,.67,.4,1.3); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // ─── Firebase Config ─────────────────────────────────────────────────────
+    // Instruccions (1 vegada, 5 minuts):
+    //  1. Ves a console.firebase.google.com → "Afegir projecte"
+    //  2. Al menú: Compilació → Realtime Database → Crear → Modalitat de prova
+    //  3. Icona ⚙️ → Configuració del projecte → Les teves apps → Web (</>)
+    //  4. Substitueix els 3 valors de sota amb els teus:
+    const FIREBASE_CONFIG = {
+      apiKey:      "AIzaSyA3c_TQWkpX_ZxjoE5xCKgWxTaI_5ceLPE",
+      databaseURL: "https://organitzador-de-tasques-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId:   "organitzador-de-tasques",
+    };
+    // ─────────────────────────────────────────────────────────────────────────
+    const FB_ENABLED = !!(FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith("POSA"));
+    let fbDb = null;
+    if (FB_ENABLED) {
+      try {
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        fbDb = firebase.database();
+      } catch(e) { console.warn("Firebase init error:", e); }
+    }
+
+    // ─── Icones SVG ──────────────────────────────────────────────────────────
+    const Ic = {
+      Zap:         ({s=20,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+      Plus:        ({s=20,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={c}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+      X:           ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={c}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+      Arrow:       ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={c}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
+      ArrowLeft:   ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={c}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>,
+      Clock:       ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+      Warn:        ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+      CheckCircle: ({s=22,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+      Circle:      ({s=22,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={c}><circle cx="12" cy="12" r="10"/></svg>,
+      Check:       ({s=12,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className={c}><polyline points="20 6 9 17 4 12"/></svg>,
+      Reset:       ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>,
+      Award:       ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>,
+      Book:        ({s=20,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+      Info:        ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>,
+      Target:      ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+      BarChart:    ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>,
+      History:     ({s=18,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>,
+      Trash:       ({s=16,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>,
+      Users:       ({s=20,c=""})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+    };
+
+    // ─── Constants ────────────────────────────────────────────────────────────
+    const S    = { PENDENT:"pendent", EN_CURS:"en_curs", FET:"fet" };
+    const DUR  = { daily:300, sprint:2400, checkout:600 };   // daily = 5 min
+    const TIMES = [5,10,15,20,30,40];
+    const fmt  = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+    const fmtMin = m => m===null||m===undefined ? "—" : m<60 ? `${m} min` : `${Math.floor(m/60)}h ${m%60}min`;
+    const HISTORY_KEY = "sprint_team_history_v1";
+    const SETUP_KEY   = "sprint_team_setup_v1";
+    function loadSetup() {
+      try { return JSON.parse(localStorage.getItem(SETUP_KEY)||"null"); } catch { return null; }
+    }
+    function saveSetup(data) {
+      try { localStorage.setItem(SETUP_KEY, JSON.stringify(data)); } catch {} }
+
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]"); } catch { return []; }
+    }
+    function saveHistory(list) {
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch {}
+    }
+
+    // ─── Components auxiliars ─────────────────────────────────────────────────
+    function TimerBadge({ timer, phase }) {
+      const active = ["daily","sprint","checkout"].includes(phase);
+      const red = active && timer > 0 && timer <= 120;
+      const exp = active && timer === 0;
+      return (
+        <div className={`flex items-center gap-1.5 px-3 py-2 rounded-full font-mono text-sm font-bold shadow-sm select-none ${exp?"bg-gray-200 text-gray-500":red?"bg-red-100 text-red-600":"bg-white/90 text-gray-700"}`}>
+          <Ic.Clock s={14} c={red&&!exp?"pulse":""}/>
+          {active?(exp?"Temps!":fmt(timer)):""}
+        </div>
+      );
+    }
+
+    function PhaseBar({ current }) {
+      const ord = ["daily","sprint","checkout"];
+      const idx = ord.indexOf(current);
+      return (
+        <div className="flex gap-1.5 mt-3">
+          {ord.map((p,i)=><div key={p} className={`flex-1 h-1.5 rounded-full transition-all ${i<=idx?"bg-white/80":"bg-white/25"}`}/>)}
+        </div>
+      );
+    }
+
+    function ProgressBar({ tasks }) {
+      const total = tasks.length;
+      const done  = tasks.filter(t=>t.status===S.FET).length;
+      const pct   = total>0?Math.round((done/total)*100):0;
+      return (
+        <div className="bg-white rounded-xl p-3 shadow-sm">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-bold text-gray-600">Progrés</span>
+            <span className="text-xs font-bold text-gray-700">{done}/{total} tasques fetes</span>
+          </div>
+          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-700 ${done===total&&total>0?"bg-green-500":"bg-orange-400"}`} style={{width:`${pct}%`}}/>
+          </div>
+          {done===total&&total>0&&<p className="text-xs text-green-600 font-bold mt-1.5 text-center pop-in">🎉 Totes les tasques fetes! Podeu fer el Check-out.</p>}
+        </div>
+      );
+    }
+
+    // Pastilla de temps estimat
+    function TimePill({ value, selected, onClick }) {
+      return (
+        <button onClick={onClick}
+          className={`px-3 py-2 rounded-xl text-sm font-bold transition-all ${selected?"bg-blue-500 text-white shadow":"bg-gray-100 text-gray-600 hover:bg-blue-50"}`}>
+          {value} min
+        </button>
+      );
+    }
+
+    // Comparació estimat vs real
+    function TimeComparison({ estimated, actual }) {
+      if (!estimated||actual===null||actual===undefined) return null;
+      const diff = actual - estimated;
+      const pct  = Math.round((actual/estimated)*100);
+      const good = Math.abs(diff) <= 5;
+      const over = diff > 5;
+      return (
+        <div className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full ${good?"bg-green-100 text-green-700":over?"bg-red-100 text-red-600":"bg-blue-100 text-blue-600"}`}>
+          <Ic.Clock s={11}/>
+          {fmtMin(estimated)} → {fmtMin(actual)}
+          <span className="font-bold">{good?"✓":over?`+${diff}min`:`-${Math.abs(diff)}min`}</span>
+        </div>
+      );
+    }
+
+    // ─── HISTORIAL DEL PROJECTE ───────────────────────────────────────────────
+    function ProjectHistory({ projectName, onClose }) {
+      const [history] = useState(()=>loadHistory());
+      const [expanded, setExpanded] = useState(null);
+      const sprints = history.filter(s=>s.projectName===projectName).sort((a,b)=>b.id-a.id);
+
+      if (sprints.length===0) return (
+        <div className="min-h-screen bg-gray-50 fade-in">
+          <div className="bg-gray-800 text-white px-4 pt-6 pb-4">
+            <div className="max-w-lg mx-auto flex items-center gap-3">
+              <button onClick={onClose} className="text-gray-300 hover:text-white"><Ic.ArrowLeft s={20}/></button>
+              <div><h2 className="text-xl font-bold">Historial del projecte</h2><p className="text-gray-400 text-sm">{projectName}</p></div>
+            </div>
+          </div>
+          <div className="max-w-lg mx-auto px-4 py-8 text-center text-gray-400">
+            <Ic.History s={48} c="mx-auto mb-3 opacity-30"/>
+            <p className="font-semibold">Encara no hi ha cap sprint guardat per a aquest projecte.</p>
+            <p className="text-sm mt-1">Acaba una sessió i clica "Guardar al historial" per començar a fer el seguiment.</p>
+          </div>
+        </div>
+      );
+
+      // Estadístiques globals del projecte
+      const allTasks = sprints.flatMap(s=>s.tasks);
+      const memberStats = {};
+      allTasks.forEach(t=>{
+        if (!t.assignee) return;
+        if (!memberStats[t.assignee]) memberStats[t.assignee]={done:0,validated:0,totalEst:0,totalReal:0,withTime:0};
+        const m = memberStats[t.assignee];
+        if (t.status===S.FET||t.validated) m.done++;
+        if (t.validated) m.validated++;
+        if (t.timeEstimate&&t.actualMinutes!=null){m.totalEst+=t.timeEstimate;m.totalReal+=t.actualMinutes;m.withTime++;}
+      });
+
+      return (
+        <div className="min-h-screen bg-gray-50 fade-in">
+          <div className="bg-gray-800 text-white px-4 pt-6 pb-5">
+            <div className="max-w-2xl mx-auto">
+              <div className="flex items-center gap-3 mb-1">
+                <button onClick={onClose} className="text-gray-300 hover:text-white flex-shrink-0"><Ic.ArrowLeft s={20}/></button>
+                <div>
+                  <h2 className="text-xl font-bold">Historial del projecte</h2>
+                  <p className="text-gray-400 text-sm">{projectName} · {sprints.length} sprint{sprints.length!==1?"s":""}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+
+            {/* Estadístiques per membre */}
+            {Object.keys(memberStats).length>0 && (
+              <div className="bg-white rounded-2xl shadow p-4">
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                  <Ic.BarChart s={18} c="text-indigo-500"/> Contribució de l'equip
+                </h3>
+                <div className="space-y-3">
+                  {Object.entries(memberStats).map(([name,st])=>{
+                    const acc = st.withTime>0?Math.round((st.totalReal/st.totalEst)*100):null;
+                    return (
+                      <div key={name} className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm flex-shrink-0">
+                          {name[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <p className="font-semibold text-gray-800 text-sm">{name}</p>
+                            <span className="text-xs text-gray-500">{st.done} tasques fetes</span>
+                          </div>
+                          {acc!==null && (
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${acc<=110?"bg-green-400":acc<=130?"bg-orange-400":"bg-red-400"}`} style={{width:`${Math.min(acc,150)}%`}}/>
+                              </div>
+                              <span className={`text-xs font-bold ${acc<=110?"text-green-600":acc<=130?"text-orange-600":"text-red-600"}`}>
+                                {acc}% del temps estimat
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-400 mt-3 italic">100% = temps real = temps estimat · &lt;100% = va anar més ràpid · &gt;100% = va trigar més</p>
+              </div>
+            )}
+
+            {/* Llista de sprints */}
+            <h3 className="font-bold text-gray-700 text-sm uppercase tracking-wider px-1">Sprints completats</h3>
+            {sprints.map((sprint,idx)=>{
+              const isOpen = expanded===sprint.id;
+              const totalEst  = sprint.tasks.reduce((a,t)=>a+(t.timeEstimate||0),0);
+              const totalReal = sprint.tasks.filter(t=>t.actualMinutes!=null).reduce((a,t)=>a+t.actualMinutes,0);
+              const tasksByMember = {};
+              sprint.tasks.forEach(t=>{
+                if(!tasksByMember[t.assignee]) tasksByMember[t.assignee]=[];
+                tasksByMember[t.assignee].push(t);
+              });
+              return (
+                <div key={sprint.id} className="bg-white rounded-2xl shadow overflow-hidden">
+                  <button
+                    onClick={()=>setExpanded(isOpen?null:sprint.id)}
+                    className="w-full p-4 text-left flex items-center gap-3"
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-extrabold text-lg flex-shrink-0 ${sprint.pct>=80?"bg-green-100 text-green-600":sprint.pct>=50?"bg-orange-100 text-orange-600":"bg-red-100 text-red-500"}`}>
+                      {sprint.pct}%
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-800">Sprint #{sprints.length-idx}</p>
+                      <p className="text-xs text-gray-500">{sprint.date} · {sprint.tasks.length} tasques · {sprint.members.join(", ")}</p>
+                      {totalEst>0&&totalReal>0&&(
+                        <p className={`text-xs mt-0.5 font-semibold ${Math.abs(totalReal-totalEst)<=10?"text-green-600":"text-orange-600"}`}>
+                          Estimat: {fmtMin(totalEst)} · Real: {fmtMin(totalReal)}
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-gray-400 text-sm">{isOpen?"▲":"▼"}</span>
+                  </button>
+
+                  {isOpen && (
+                    <div className="border-t border-gray-100 p-4 space-y-4 fade-in">
+                      {Object.entries(tasksByMember).map(([member,memberTasks])=>(
+                        <div key={member}>
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{member}</p>
+                          <div className="space-y-2">
+                            {memberTasks.map((t,i)=>(
+                              <div key={i} className={`rounded-xl p-3 ${t.validated?"bg-green-50":t.status===S.FET?"bg-blue-50":"bg-gray-50"}`}>
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-sm font-medium text-gray-800 flex-1">{t.text}</p>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${t.validated?"bg-green-200 text-green-700":t.status===S.FET?"bg-blue-200 text-blue-700":"bg-gray-200 text-gray-600"}`}>
+                                    {t.validated?"Validat":t.status===S.FET?"Fet":"Pendent"}
+                                  </span>
+                                </div>
+                                {(t.timeEstimate||t.actualMinutes!=null) && (
+                                  <div className="mt-2">
+                                    <TimeComparison estimated={t.timeEstimate} actual={t.actualMinutes}/>
+                                  </div>
+                                )}
+                                {t.blocker&&<span className="text-xs text-orange-600 mt-1 flex items-center gap-1"><Ic.Warn s={10}/>Tenia blocador{t.blockerText?`: ${t.blockerText}`:""}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── APP PRINCIPAL ────────────────────────────────────────────────────────
+    function SprintTeam() {
+      // Càrrega inicial des de localStorage
+      const saved = loadSetup();
+      const [phase, setPhase]               = useState("setup");
+      const [projectName, setProjectName]   = useState(saved?.projectName||"");
+      const [members, setMembers]           = useState(()=>{
+        if (saved?.members?.length) return [...saved.members, "","","",""].slice(0,4);
+        return ["","","",""];
+      });
+      const [tasks, setTasks]               = useState([]);
+      const [timer, setTimer]               = useState(0);
+      const [teacherView, setTeacherView]   = useState(false);
+      const [sessionValidated, setSessionValidated] = useState(false);
+      const [flashId, setFlashId]           = useState(null);
+      const [showHistory, setShowHistory]   = useState(false);
+      const [savedToHistory, setSavedToHistory] = useState(false);
+      const [groupName, setGroupName]           = useState(saved?.groupName||"");
+      const [groupId, setGroupId]               = useState("");
+      const [suggestModal, setSuggestModal]     = useState(null); // {member, available[]}
+      const [claimingTaskId, setClaimingTaskId] = useState(null);
+
+      // Daily: 2 sub-fases
+      const [dailyStep, setDailyStep]       = useState("brainstorm"); // "brainstorm" | "assign"
+      const [draftText, setDraftText]       = useState("");
+
+      // Estado assign inline per tasca
+      const [assignState, setAssignState]   = useState({}); // {[taskId]: {assignee, timeEstimate, blocker, blockerText}}
+
+      const active = members.filter(m=>m.trim()!=="");
+
+      // Timer
+      useEffect(()=>{
+        if (!["daily","sprint","checkout"].includes(phase)||timer<=0) return;
+        const id = setInterval(()=>setTimer(t=>Math.max(0,t-1)),1000);
+        return ()=>clearInterval(id);
+      },[phase,timer]);
+
+      const goPhase = p => { setPhase(p); setTimer(DUR[p]||0); };
+      const flash   = id => { setFlashId(id); setTimeout(()=>setFlashId(null),800); };
+
+      // Publica l'estat a Firebase quan canvia la fase o les tasques
+      useEffect(()=>{
+        if (!FB_ENABLED || !fbDb || !groupId || phase==="setup") return;
+        try {
+          fbDb.ref(`sprint_sessions/${groupId}`).set({
+            groupId,
+            groupName: groupName.trim() || projectName.trim() || "Grup",
+            projectName,
+            members: members.filter(m=>m.trim()!==""),
+            phase, tasks,
+            timer,
+            timestamp: Date.now(),
+          });
+        } catch(e) {}
+      }, [phase, tasks, groupId]); // eslint-disable-line
+
+      // Inicia la sessió: guarda el setup i genera un ID únic
+      const startSession = () => {
+        const gn = groupName.trim() || "grup";
+        const pn = projectName.trim();
+        const activeM = members.filter(m=>m.trim()!=="");
+        saveSetup({ groupName: gn, projectName: pn, members: activeM });
+        const slug = gn.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+        setGroupId(`${slug}_${Date.now()}`);
+        setPhase("daily");
+        setTimer(DUR.daily);
+      };
+
+      const addDraftTask = () => {
+        if (!draftText.trim()||tasks.length>=8) return;
+        const t = { id:Date.now(), text:draftText.trim(), assignee:"", blocker:false, blockerText:"",
+          timeEstimate:null, startedAt:null, finishedAt:null, actualMinutes:null,
+          status:S.PENDENT, validated:false, confirmed:[] };
+        setTasks(prev=>[...prev,t]);
+        setAssignState(prev=>({...prev,[t.id]:{assignee:"",timeEstimate:null,blocker:false,blockerText:""}}));
+        setDraftText("");
+      };
+
+      // Confirmar assignació de totes les tasques i passar a Sprint
+      const confirmAssignments = () => {
+        const updated = tasks.map(t=>{
+          const a = assignState[t.id]||{};
+          return {...t, assignee:a.assignee||t.assignee, timeEstimate:a.timeEstimate||t.timeEstimate,
+            blocker:a.blocker!==undefined?a.blocker:t.blocker, blockerText:a.blockerText||t.blockerText};
+        });
+        setTasks(updated);
+        goPhase("sprint");
+      };
+
+      const moveTask = (id,ns) => {
+        const now = Date.now();
+        setTasks(ts=>ts.map(t=>{
+          if (t.id!==id) return t;
+          const updates = { status:ns };
+          if (ns===S.EN_CURS && !t.startedAt) updates.startedAt = now;
+          if (ns===S.FET) {
+            updates.finishedAt = now;
+            if (t.startedAt) updates.actualMinutes = Math.max(1, Math.round((now-t.startedAt)/60000));
+          }
+          return {...t,...updates};
+        }));
+        if (ns===S.FET) flash(id);
+      };
+
+      // Marca una tasca com a feta i comprova si cal proposar una nova tasca
+      const markDone = (task) => {
+        const now = Date.now();
+        const newTasks = tasks.map(t => {
+          if (t.id !== task.id) return t;
+          return { ...t, status:S.FET, finishedAt:now,
+            actualMinutes: t.startedAt ? Math.max(1, Math.round((now-t.startedAt)/60000)) : null };
+        });
+        setTasks(newTasks);
+        flash(task.id);
+
+        // Si el membre que ha acabat no té més tasques pendents → suggereix
+        const member = task.assignee;
+        if (!member) return;
+        const stillActive = newTasks.filter(t => t.assignee===member && t.status!==S.FET);
+        if (stillActive.length === 0) {
+          // Només lliures (sense assignar) o bloquejades — no les que ja estan en curs per algú
+          const available = newTasks.filter(t =>
+            t.status !== S.FET && t.id !== task.id && (!t.assignee || t.blocker)
+          );
+          if (available.length > 0) setSuggestModal({ member, available });
+        }
+      };
+
+      // El membre agafa una tasca del suggeriment: si no té assignat → li assigna a ell
+      const takeSuggestedTask = (task) => {
+        const member = suggestModal.member;
+        const now = Date.now();
+        setTasks(prev => prev.map(t => {
+          if (t.id !== task.id) return t;
+          return { ...t,
+            assignee: t.assignee || member,   // pren la tasca si era lliure
+            status: S.EN_CURS,
+            startedAt: t.startedAt || now,
+          };
+        }));
+        setSuggestModal(null);
+      };
+
+      // Assigna una tasca lliure a un membre i la posa en curs
+      const claimTask = (taskId, member) => {
+        const now = Date.now();
+        setTasks(prev => prev.map(t => {
+          if (t.id !== taskId) return t;
+          return { ...t, assignee: member, status: S.EN_CURS, startedAt: t.startedAt || now };
+        }));
+        setClaimingTaskId(null);
+      };
+
+      const toggleConfirm = (taskId,member) => {
+        setTasks(ts=>ts.map(t=>{
+          if (t.id!==taskId) return t;
+          const confirmed = t.confirmed.includes(member)?t.confirmed.filter(m=>m!==member):[...t.confirmed,member];
+          return {...t,confirmed,validated:active.every(m=>confirmed.includes(m))};
+        }));
+      };
+
+      const handleSaveToHistory = () => {
+        const history = loadHistory();
+        const pct = tasks.length>0?Math.round((tasks.filter(t=>t.validated).length/tasks.length)*100):0;
+        history.push({
+          id:Date.now(), date:new Date().toLocaleDateString("ca"),
+          projectName, members:active, pct,
+          tasks: tasks.map(t=>({text:t.text,assignee:t.assignee,status:t.status,validated:t.validated,
+            timeEstimate:t.timeEstimate,actualMinutes:t.actualMinutes,blocker:t.blocker,blockerText:t.blockerText})),
+        });
+        saveHistory(history);
+        setSavedToHistory(true);
+      };
+
+      const reset = () => {
+        setPhase("setup"); setTasks([]); setProjectName(""); setMembers(["","","",""]);
+        setSessionValidated(false); setTimer(0); setDailyStep("brainstorm");
+        setDraftText(""); setAssignState({}); setSavedToHistory(false);
+        setGroupName(""); setGroupId("");
+      };
+
+      // ── Historial ─────────────────────────────────────────────────────────
+      if (showHistory) return <ProjectHistory projectName={projectName} onClose={()=>setShowHistory(false)}/>;
+
+      // ── Vista Professor ───────────────────────────────────────────────────
+      if (teacherView) {
+        const validated = tasks.filter(t=>t.validated).length;
+        const fetPendentRevisio = tasks.filter(t=>t.status===S.FET&&!t.validated).length;
+        const enCurs  = tasks.filter(t=>t.status===S.EN_CURS).length;
+        const pendent = tasks.filter(t=>t.status===S.PENDENT).length;
+        const blks    = tasks.filter(t=>t.blocker);
+        const pct     = tasks.length>0?Math.round((validated/tasks.length)*100):0;
+        const phaseLabel = {setup:"Configuració",daily:"Planificació",sprint:"Sprint",checkout:"Check-out",summary:"Resum"}[phase]||phase;
+        return (
+          <div className="min-h-screen bg-gray-900 text-white p-4 fade-in">
+            <div className="max-w-lg mx-auto">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-xl font-bold">Vista del professor</h2>
+                  <p className="text-gray-400 text-sm">{projectName||"—"} · {active.join(", ")}</p>
+                </div>
+                <button onClick={()=>setTeacherView(false)} className="bg-gray-700 px-4 py-2 rounded-xl text-sm font-medium">← Tancar</button>
+              </div>
+
+              <div className={`rounded-xl px-4 py-2 mb-4 text-sm font-semibold text-center ${phase==="sprint"?"bg-orange-500":phase==="checkout"?"bg-green-500":phase==="daily"?"bg-blue-500":"bg-gray-700"}`}>
+                Fase actual: {phaseLabel} {["daily","sprint","checkout"].includes(phase)&&timer>0?`· ${fmt(timer)} restants`:""}
+              </div>
+
+              {/* 4 estats separats */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {[["Pendents",pendent,"text-gray-400","bg-gray-800"],
+                  ["En curs",enCurs,"text-orange-400","bg-gray-800"],
+                  ["Fetes*",fetPendentRevisio,"text-blue-400","bg-gray-800"],
+                  ["Validades",validated,"text-green-400","bg-gray-800"],
+                ].map(([l,n,c,bg])=>(
+                  <div key={l} className={`${bg} rounded-2xl p-3 text-center`}>
+                    <div className={`text-3xl font-extrabold ${c}`}>{n}</div>
+                    <div className="text-gray-400 text-xs mt-1 leading-tight">{l}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-gray-500 text-xs mb-4">* Fetes = marcades com a fetes pel membre, però pendents de revisió al Check-out</p>
+
+              {tasks.length>0 && (
+                <div className="bg-gray-800 rounded-xl p-3 mb-4">
+                  <div className="flex justify-between text-xs text-gray-400 mb-1.5"><span>Progrés validació</span><span>{pct}%</span></div>
+                  <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-green-500 rounded-full transition-all" style={{width:`${pct}%`}}/>
+                  </div>
+                </div>
+              )}
+
+              {blks.length>0&&(
+                <div className="bg-orange-950 border border-orange-600 rounded-2xl p-4 mb-4">
+                  <h3 className="font-bold text-orange-300 mb-2 flex items-center gap-2"><Ic.Warn s={16}/> Blocadors ({blks.length})</h3>
+                  {blks.map(t=><p key={t.id} className="text-sm text-orange-200">· <span className="font-medium">{t.assignee}</span>: {t.text}{t.blockerText&&` — ${t.blockerText}`}</p>)}
+                </div>
+              )}
+
+              <div className="space-y-2 mb-6">
+                {tasks.map(t=>(
+                  <div key={t.id} className="bg-gray-800 rounded-xl p-3 flex items-center gap-3">
+                    <div className={`w-3 h-3 rounded-full flex-shrink-0 ${t.validated?"bg-green-400":t.status===S.FET?"bg-blue-400":t.status===S.EN_CURS?"bg-orange-400":"bg-gray-600"}`}/>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{t.text}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-gray-500">{t.assignee}</p>
+                        {t.timeEstimate&&<span className="text-xs text-gray-600">Est: {t.timeEstimate}min</span>}
+                        {t.actualMinutes!=null&&<span className={`text-xs font-semibold ${t.actualMinutes>t.timeEstimate*1.3?"text-red-400":"text-green-400"}`}>Real: {t.actualMinutes}min</span>}
+                      </div>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${t.validated?"bg-green-900 text-green-300":t.status===S.FET?"bg-blue-900 text-blue-300":t.status===S.EN_CURS?"bg-orange-900 text-orange-300":"bg-gray-700 text-gray-400"}`}>
+                      {t.validated?"✓ Validat":t.status===S.FET?"Fet":t.status===S.EN_CURS?"En curs":"Pendent"}
+                    </span>
+                    {t.blocker&&<Ic.Warn s={14} c="text-orange-400 flex-shrink-0"/>}
+                  </div>
+                ))}
+              </div>
+
+              {phase==="summary"&&!sessionValidated&&(
+                <button onClick={()=>{setSessionValidated(true);setTeacherView(false);}} className="w-full py-4 bg-green-500 rounded-2xl font-bold text-lg">✓ Validar sessió</button>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // ── Setup ─────────────────────────────────────────────────────────────
+      if (phase==="setup") {
+        const ok = projectName.trim() && active.length>=2;
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-violet-100 to-blue-100 flex flex-col items-center justify-center p-4 fade-in">
+            <div className="w-full max-w-md">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-violet-500 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg text-white"><Ic.Zap s={32}/></div>
+                <h1 className="text-4xl font-extrabold text-gray-900">Sprint d'Equip</h1>
+                <p className="text-gray-500 mt-1">Organitzeu la sessió en 3 passos</p>
+              </div>
+
+              <div className="bg-white/80 rounded-2xl p-4 mb-4 shadow-sm">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Com funciona</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[{emoji:"📋",label:"Planificació",desc:"Repartiu tasques (5 min)",color:"text-blue-600"},
+                    {emoji:"⚡",label:"Sprint",desc:"Treballeu sols (40 min)",color:"text-orange-600"},
+                    {emoji:"✅",label:"Revisió",desc:"Reviseu junts (10 min)",color:"text-green-600"}].map(({emoji,label,desc,color})=>(
+                    <div key={label} className="bg-gray-50 rounded-xl p-2.5">
+                      <div className="text-2xl mb-1">{emoji}</div>
+                      <p className={`text-xs font-bold ${color}`}>{label}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 leading-tight">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {!FB_ENABLED && (
+                <div className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-4 mb-2">
+                  <p className="text-orange-800 text-sm font-bold mb-1">⚙️ Firebase no configurat</p>
+                  <p className="text-orange-700 text-xs">El professor no podrà veure els grups en temps real. Obre sprint-team.html i afegeix la teva configuració de Firebase (instruccions a dalt de l'script).</p>
+                </div>
+              )}
+
+              <div className="bg-white rounded-2xl shadow-lg p-6 space-y-5">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Nom del grup <span className="font-normal text-gray-400">(el veurà el professor)</span></label>
+                  <input className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-violet-400"
+                    placeholder="Ex: Grup A, Taula 3, Equip Rocket..." value={groupName} onChange={e=>setGroupName(e.target.value)}/>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1.5">Nom del projecte</label>
+                  <input className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-violet-400"
+                    placeholder="Ex: Robot seguidor de línia" value={projectName} onChange={e=>setProjectName(e.target.value)}/>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Membres <span className="font-normal text-gray-400">(mínim 2, màxim 4)</span></label>
+                  <div className="space-y-2">
+                    {members.map((m,i)=>(
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 font-bold text-sm flex-shrink-0">{i+1}</div>
+                        <input className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-2.5 text-base focus:outline-none focus:border-violet-400"
+                          placeholder={i<2?`Membre ${i+1} (obligatori)`:`Membre ${i+1} (opcional)`}
+                          value={m} onChange={e=>{const n=[...members];n[i]=e.target.value;setMembers(n);}}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button disabled={!ok} onClick={startSession}
+                  className={`w-full py-4 rounded-xl text-lg font-bold flex items-center justify-center gap-2 transition-all ${ok?"bg-violet-500 text-white hover:bg-violet-600 shadow-md":"bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+                  Comencem! <Ic.Arrow s={20}/>
+                </button>
+              </div>
+
+              {/* Accés directe a l'historial */}
+              <button onClick={()=>setShowHistory(true)} className="w-full mt-3 py-2.5 rounded-xl border-2 border-violet-200 text-violet-600 text-sm font-semibold flex items-center justify-center gap-2">
+                <Ic.History s={16}/> Veure historial del projecte
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Daily — Pas 1: Brainstorming ───────────────────────────────────────
+      if (phase==="daily" && dailyStep==="brainstorm") {
+        return (
+          <div className="min-h-screen bg-blue-50 fade-in">
+            <div className="bg-blue-500 text-white px-4 pt-6 pb-5">
+              <div className="max-w-lg mx-auto">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-2xl font-extrabold">Planificació</h2>
+                    <p className="text-blue-100 text-sm">{projectName} · <span className="text-blue-200">Pas 1 de 2: penseu les tasques</span></p>
+                  </div>
+                  <TimerBadge timer={timer} phase={phase}/>
+                </div>
+                <PhaseBar current="daily"/>
+              </div>
+            </div>
+
+            <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+              <div className="bg-blue-100 border border-blue-200 rounded-xl p-3 flex items-start gap-2">
+                <Ic.Info s={16} c="text-blue-500 flex-shrink-0 mt-0.5"/>
+                <div>
+                  <p className="text-sm font-semibold text-blue-800">Penseu junts, tothom proposa</p>
+                  <p className="text-xs text-blue-600 mt-0.5">Ara escriviu les tasques que cal fer avui. Qui se n'encarrega es decidirà al pas següent. Tasca bona = acabable en una sessió.</p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-gray-800">Nova tasca</h3>
+                  <span className={`text-sm font-medium px-2.5 py-0.5 rounded-full ${tasks.length>=8?"bg-red-100 text-red-600":"bg-gray-100 text-gray-500"}`}>{tasks.length}/8</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-blue-400"
+                    placeholder="Proposa una tasca..."
+                    value={draftText}
+                    onChange={e=>setDraftText(e.target.value)}
+                    onKeyDown={e=>e.key==="Enter"&&addDraftTask()}
+                    disabled={tasks.length>=8}
+                  />
+                  <button onClick={addDraftTask} disabled={!draftText.trim()||tasks.length>=8}
+                    className={`px-4 py-3 rounded-xl font-bold flex items-center gap-1 ${draftText.trim()&&tasks.length<8?"bg-blue-500 text-white":"bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+                    <Ic.Plus s={18}/>
+                  </button>
+                </div>
+              </div>
+
+              {tasks.length>0 && (
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider px-1 mb-2">Propostes ({tasks.length})</p>
+                  <div className="space-y-2">
+                    {tasks.map(t=>(
+                      <div key={t.id} className="bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm">
+                        <p className="flex-1 text-sm font-medium text-gray-800">{t.text}</p>
+                        <button onClick={()=>{setTasks(prev=>prev.filter(x=>x.id!==t.id));setAssignState(prev=>{const n={...prev};delete n[t.id];return n;})}}
+                          className="text-gray-300 hover:text-red-400 p-1 flex-shrink-0"><Ic.X s={16}/></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pb-8">
+                <button disabled={tasks.length===0} onClick={()=>{
+                    // Inicialitzar assignState per cada tasca
+                    const init={};
+                    tasks.forEach(t=>{init[t.id]={assignee:t.assignee||"",timeEstimate:t.timeEstimate||null,blocker:t.blocker||false,blockerText:t.blockerText||""};});
+                    setAssignState(init);
+                    setDailyStep("assign");
+                  }}
+                  className={`flex-1 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 ${tasks.length>0?"bg-blue-600 text-white hover:bg-blue-700 shadow":"bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+                  Repartir → <Ic.Arrow s={18}/>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Daily — Pas 2: Assignació i temps estimat ──────────────────────────
+      if (phase==="daily" && dailyStep==="assign") {
+        const getA  = id => assignState[id]||{};
+        const setA  = (id,key,val) => setAssignState(prev=>({...prev,[id]:{...prev[id],[key]:val}}));
+        // Cada membre ha de tenir ≥1 tasca; les tasques sense assignar estan bé
+        // Les tasques assignades han de tenir temps estimat
+        const membersWithoutTask   = active.filter(m=>!tasks.some(t=>getA(t.id).assignee===m));
+        const assignedWithoutTime  = tasks.filter(t=>getA(t.id).assignee && !getA(t.id).timeEstimate);
+        const canStartSprint = membersWithoutTask.length===0 && assignedWithoutTime.length===0;
+
+        return (
+          <div className="min-h-screen bg-blue-50 fade-in">
+            <div className="bg-blue-600 text-white px-4 pt-6 pb-5">
+              <div className="max-w-lg mx-auto">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-2xl font-extrabold">Planificació</h2>
+                    <p className="text-blue-100 text-sm">{projectName} · <span className="text-blue-200">Pas 2 de 2: repartiu i estimeu</span></p>
+                  </div>
+                  <TimerBadge timer={timer} phase={phase}/>
+                </div>
+                <PhaseBar current="daily"/>
+              </div>
+            </div>
+
+            <div className="max-w-lg mx-auto px-4 py-4 space-y-3">
+              <div className="bg-blue-100 border border-blue-200 rounded-xl p-3 flex items-start gap-2">
+                <Ic.Info s={16} c="text-blue-500 flex-shrink-0 mt-0.5"/>
+                <div>
+                  <p className="text-sm text-blue-800">Per a cada tasca: <strong>decidiu qui la fa</strong> i <strong>quant de temps trigarà</strong>.</p>
+                  <p className="text-xs text-blue-600 mt-1">Les tasques sense assignar quedaran al <strong>pool lliure</strong> — qualsevol les pot agafar durant el sprint.</p>
+                </div>
+              </div>
+
+              {membersWithoutTask.length>0&&(
+                <div className="bg-yellow-50 border border-yellow-300 rounded-xl p-3 flex items-start gap-2">
+                  <Ic.Warn s={16} c="text-yellow-600 flex-shrink-0 mt-0.5"/>
+                  <p className="text-sm text-yellow-700"><span className="font-semibold">{membersWithoutTask.join(", ")}</span> {membersWithoutTask.length===1?"no té":"no tenen"} cap tasca assignada.</p>
+                </div>
+              )}
+
+              {tasks.map(t=>{
+                const a = getA(t.id);
+                return (
+                  <div key={t.id} className="bg-white rounded-2xl shadow p-4 space-y-3">
+                    <p className="font-bold text-gray-800">{t.text}</p>
+
+                    {/* Qui la fa */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Qui la fa?</p>
+                      <div className="flex flex-wrap gap-2">
+                        {active.map(m=>(
+                          <button key={m} onClick={()=>setA(t.id,"assignee",m)}
+                            className={`px-4 py-2.5 rounded-full text-sm font-semibold transition-all ${a.assignee===m?"bg-blue-500 text-white shadow":"bg-gray-100 text-gray-600"}`}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Temps estimat */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Temps estimat</p>
+                      <div className="flex flex-wrap gap-2">
+                        {TIMES.map(min=>(
+                          <TimePill key={min} value={min} selected={a.timeEstimate===min} onClick={()=>setA(t.id,"timeEstimate",min)}/>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Blocador */}
+                    <button onClick={()=>setA(t.id,"blocker",!a.blocker)}
+                      className={`flex items-center gap-2 w-full px-3 py-2.5 rounded-xl border-2 text-sm font-medium ${a.blocker?"border-orange-300 bg-orange-50 text-orange-700":"border-gray-200 text-gray-500"}`}>
+                      <Ic.Warn s={14} c={a.blocker?"text-orange-500":"text-gray-400"}/>
+                      {a.blocker?"Blocador marcat":"Necessito ajuda amb aquesta tasca"}
+                    </button>
+                    {a.blocker&&(
+                      <input className="w-full border-2 border-orange-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-orange-50"
+                        placeholder="Explica el problema: 'No sé com fer...'"
+                        value={a.blockerText||""}
+                        onChange={e=>setA(t.id,"blockerText",e.target.value)}/>
+                    )}
+                  </div>
+                );
+              })}
+
+              <div className="flex gap-3 pb-8">
+                <button onClick={()=>setDailyStep("brainstorm")} className="py-3.5 px-5 rounded-xl border-2 border-blue-200 text-blue-600 font-semibold text-sm flex items-center gap-1">
+                  <Ic.ArrowLeft s={16}/> Tornar
+                </button>
+                {assignedWithoutTime.length>0&&(
+                  <p className="text-xs text-orange-600 font-semibold text-center">Falta el temps estimat a {assignedWithoutTime.length} tasca{assignedWithoutTime.length>1?"es":""} assignada{assignedWithoutTime.length>1?"es":""}.</p>
+                )}
+                <button disabled={!canStartSprint} onClick={confirmAssignments}
+                  className={`flex-1 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 ${canStartSprint?"bg-orange-500 text-white hover:bg-orange-600 shadow":"bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+                  Comencem el Sprint! <Ic.Arrow s={18}/>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Sprint ────────────────────────────────────────────────────────────
+      if (phase==="sprint") {
+        const assignedTasks = tasks.filter(t=>t.assignee);
+        const freeTasks     = tasks.filter(t=>!t.assignee && t.status!==S.FET);
+        const cols = [
+          {id:S.PENDENT, label:"Per fer",  color:"bg-slate-400", items:assignedTasks.filter(t=>t.status===S.PENDENT)},
+          {id:S.EN_CURS, label:"En curs",  color:"bg-orange-500", items:assignedTasks.filter(t=>t.status===S.EN_CURS)},
+          {id:S.FET,     label:"Fet ✓",    color:"bg-green-500",  items:assignedTasks.filter(t=>t.status===S.FET)},
+        ];
+        const activeBlk = tasks.filter(t=>t.blocker&&t.status!==S.FET);
+        return (
+          <>
+          <div className="min-h-screen bg-orange-50 fade-in">
+            <div className="bg-orange-500 text-white px-4 pt-6 pb-5">
+              <div className="max-w-2xl mx-auto">
+                <div className="flex items-start justify-between">
+                  <div><h2 className="text-2xl font-extrabold">Sprint</h2><p className="text-orange-100 text-sm">{projectName}</p></div>
+                  <TimerBadge timer={timer} phase={phase}/>
+                </div>
+                <PhaseBar current="sprint"/>
+                <p className="text-orange-200 text-xs mt-1">Fase 2 de 3 · 40 minuts de treball autònom</p>
+              </div>
+            </div>
+
+            <div className="max-w-2xl mx-auto px-4 py-4 space-y-3">
+              <ProgressBar tasks={tasks}/>
+
+              {activeBlk.length>0&&(
+                <div className="bg-red-50 border-2 border-red-300 rounded-xl p-3 flex items-start gap-2">
+                  <Ic.Warn s={18} c="text-red-500 flex-shrink-0 mt-0.5"/>
+                  <div>
+                    <p className="text-sm font-bold text-red-700 mb-1">⚠️ Membres bloquejats — demaneu ajuda!</p>
+                    {activeBlk.map(t=><p key={t.id} className="text-xs text-red-600">· <span className="font-semibold">{t.assignee}</span>: {t.blockerText||t.text}</p>)}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2">
+                {cols.map(col=>(
+                  <div key={col.id} className="bg-white rounded-2xl shadow overflow-hidden flex flex-col">
+                    <div className={`${col.color} px-2 py-2.5 text-center`}>
+                      <p className="text-white font-bold text-sm">{col.label}</p>
+                      <p className="text-white/75 text-xs">{col.items.length}</p>
+                    </div>
+                    <div className="p-2 space-y-2 flex-1 min-h-24">
+                      {col.items.length===0&&<p className="text-xs text-gray-300 text-center mt-4">—</p>}
+                      {col.items.map(task=>(
+                        <div key={task.id} className={`rounded-xl p-2.5 ${task.blocker?"bg-red-50 border-2 border-red-200":"bg-gray-50"} ${flashId===task.id?"flash":""}`}>
+                          <p className="text-xs font-semibold text-gray-800 leading-snug">{task.text}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{task.assignee}</p>
+                          {task.timeEstimate&&<p className="text-xs text-blue-500 mt-0.5 font-medium">Est: {task.timeEstimate} min</p>}
+                          {task.blocker&&<div className="flex items-center gap-1 mt-1 mb-1"><Ic.Warn s={10} c="text-red-500"/><span className="text-xs text-red-600 font-semibold">Bloquejat</span></div>}
+                          <div className="space-y-1 mt-2">
+                            {col.id!==S.PENDENT&&<button onClick={()=>moveTask(task.id,col.id===S.EN_CURS?S.PENDENT:S.EN_CURS)} className="w-full py-1.5 text-xs bg-gray-200 text-gray-600 rounded-lg font-semibold">← {col.id===S.EN_CURS?"Pausa":"Reprenc"}</button>}
+                            {col.id!==S.FET&&<button onClick={()=>col.id===S.EN_CURS?markDone(task):moveTask(task.id,S.EN_CURS)} className={`w-full py-1.5 text-xs rounded-lg font-semibold text-white ${col.id===S.PENDENT?"bg-orange-500":"bg-green-500"}`}>{col.id===S.PENDENT?"Començo →":"Fet! ✓"}</button>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pool de tasques lliures */}
+              {freeTasks.length>0&&(
+                <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-3">
+                  <p className="text-xs font-bold text-purple-700 mb-2 flex items-center gap-1.5">
+                    <Ic.Users s={14}/> Tasques lliures — qualsevol les pot agafar ({freeTasks.length})
+                  </p>
+                  <div className="space-y-2">
+                    {freeTasks.map(t=>(
+                      <div key={t.id} className="bg-white rounded-xl p-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-gray-800">{t.text}</p>
+                            {t.timeEstimate&&<p className="text-xs text-purple-500 mt-0.5">~{t.timeEstimate} min</p>}
+                          </div>
+                          <button onClick={()=>setClaimingTaskId(claimingTaskId===t.id?null:t.id)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg flex-shrink-0 transition-all ${claimingTaskId===t.id?"bg-gray-200 text-gray-600":"bg-purple-500 text-white"}`}>
+                            {claimingTaskId===t.id?"Cancel·la ✕":"Agafo →"}
+                          </button>
+                        </div>
+                        {claimingTaskId===t.id&&(
+                          <div className="mt-2.5 pt-2.5 border-t border-purple-100 fade-in">
+                            <p className="text-xs text-purple-700 font-bold mb-2">Qui l'agafa?</p>
+                            <div className="flex flex-wrap gap-2">
+                              {active.map(m=>(
+                                <button key={m} onClick={()=>claimTask(t.id, m)}
+                                  className="px-3 py-2 bg-purple-100 text-purple-700 rounded-xl text-sm font-bold hover:bg-purple-200 active:scale-95 transition-all">
+                                  {m}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pb-8">
+                <button onClick={()=>goPhase("checkout")} className="w-full py-3.5 rounded-xl bg-green-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-green-600">
+                  Check-out <Ic.Arrow s={18}/>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Modal de suggeriment de nova tasca */}
+          {suggestModal&&(
+            <div className="fixed inset-0 bg-black/60 flex items-end justify-center p-4 z-50">
+              <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-2xl pop-in">
+                <div className="text-center mb-4">
+                  <div className="text-4xl mb-2">🎉</div>
+                  <h3 className="font-extrabold text-gray-900 text-xl">{suggestModal.member}, tasca acabada!</h3>
+                  <p className="text-gray-500 text-sm mt-1">Quina tasca vols fer ara?</p>
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+                  {suggestModal.available.map(t=>(
+                    <button key={t.id} onClick={()=>takeSuggestedTask(t)}
+                      className="w-full text-left p-3 rounded-xl border-2 border-gray-200 hover:border-orange-400 hover:bg-orange-50 active:scale-98 transition-all">
+                      <p className="font-semibold text-gray-800 text-sm">{t.text}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {t.assignee
+                          ? <span className="text-xs text-orange-600 font-medium">De {t.assignee}{t.blocker?" · bloquejat":""}</span>
+                          : <span className="text-xs text-purple-600 font-medium">Tasca lliure</span>}
+                        {t.timeEstimate&&<span className="text-xs text-gray-400">~{t.timeEstimate} min</span>}
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${t.status===S.EN_CURS?"bg-orange-100 text-orange-600":"bg-gray-100 text-gray-500"}`}>
+                          {t.status===S.EN_CURS?"En curs":"Pendent"}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={()=>setSuggestModal(null)}
+                  className="w-full py-3 rounded-xl border-2 border-gray-200 text-gray-500 font-semibold text-sm">
+                  Ja n'he acabat per avui
+                </button>
+              </div>
+            </div>
+          )}
+          </>
+        );
+      }
+
+      // ── Checkout ──────────────────────────────────────────────────────────
+      if (phase==="checkout") {
+        const totalValidated = tasks.filter(t=>t.validated).length;
+        return (
+          <div className="min-h-screen bg-green-50 fade-in">
+            <div className="bg-green-500 text-white px-4 pt-6 pb-5">
+              <div className="max-w-lg mx-auto">
+                <div className="flex items-start justify-between">
+                  <div><h2 className="text-2xl font-extrabold">Revisió</h2><p className="text-green-100 text-sm">{projectName} · Check-out</p></div>
+                  <TimerBadge timer={timer} phase={phase}/>
+                </div>
+                <PhaseBar current="checkout"/>
+                <p className="text-green-200 text-xs mt-1">Fase 3 de 3 · 10 minuts per revisar-ho tot junts</p>
+              </div>
+            </div>
+
+            <div className="max-w-lg mx-auto px-4 py-4 space-y-3">
+              <div className="bg-white rounded-2xl p-4 shadow">
+                <div className="flex items-start gap-3">
+                  <Ic.Book s={22} c="text-green-500 flex-shrink-0 mt-0.5"/>
+                  <div>
+                    <p className="font-bold text-gray-800">La Regla del Fet</p>
+                    <p className="text-sm text-gray-600 mt-1">Toqueu el vostre nom a cada tasca per confirmar que podeu explicar-la a qualsevol company.</p>
+                    <p className="text-xs text-gray-400 mt-1.5 italic">Per a qué? Si algú falta demà, qualsevol ha de poder continuar. Un equip fort és un equip on tothom sap tot el que s'ha fet.</p>
+                  </div>
+                </div>
+                {tasks.length>0&&(
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-400 rounded-full transition-all duration-500" style={{width:`${Math.round((totalValidated/tasks.length)*100)}%`}}/>
+                    </div>
+                    <span className="text-xs font-bold text-gray-500">{totalValidated}/{tasks.length}</span>
+                  </div>
+                )}
+              </div>
+
+              {tasks.map(task=>{
+                const allOk   = active.every(m=>task.confirmed.includes(m));
+                const missing = active.filter(m=>!task.confirmed.includes(m));
+                return (
+                  <div key={task.id} className={`bg-white rounded-2xl shadow p-4 transition-all ${allOk?"border-2 border-green-400":"border-2 border-transparent"}`}>
+                    <div className="flex items-start gap-3 mb-2">
+                      <div className={`flex-shrink-0 mt-0.5 ${allOk?"text-green-500":"text-gray-300"}`}>{allOk?<Ic.CheckCircle s={22}/>:<Ic.Circle s={22}/>}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-800">{task.text}</p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="text-xs text-gray-500">Responsable: <span className="font-semibold">{task.assignee}</span></span>
+                          {task.blocker&&<span className="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full flex items-center gap-1"><Ic.Warn s={10}/> Tenia blocador</span>}
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${task.status===S.FET?"bg-green-100 text-green-700":task.status===S.EN_CURS?"bg-orange-100 text-orange-700":"bg-gray-100 text-gray-500"}`}>
+                            {task.status===S.FET?"✓ Fet":task.status===S.EN_CURS?"En curs":"Pendent"}
+                          </span>
+                          <TimeComparison estimated={task.timeEstimate} actual={task.actualMinutes}/>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {active.map(member=>{
+                        const conf = task.confirmed.includes(member);
+                        return (
+                          <button key={member} onClick={()=>toggleConfirm(task.id,member)}
+                            className={`py-3 px-3 rounded-xl text-sm font-semibold flex items-center gap-2 active:scale-95 transition-all ${conf?"bg-green-100 text-green-700 border-2 border-green-400":"bg-gray-100 text-gray-500 border-2 border-transparent"}`}>
+                            <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${conf?"bg-green-500":"bg-gray-300"}`}>{conf&&<Ic.Check s={12} c="text-white"/>}</span>
+                            {member}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!allOk&&task.confirmed.length>0&&<p className="text-xs text-gray-400 mt-2 text-center">Falta: <span className="font-semibold">{missing.join(", ")}</span></p>}
+                    {allOk&&<p className="text-center text-sm text-green-600 font-bold mt-3 pop-in">✓ Tot l'equip ho entén!</p>}
+                  </div>
+                );
+              })}
+
+              <div className="flex gap-3 pb-8">
+                <button onClick={()=>{setPhase("summary");setTimer(0);}} className="w-full py-3.5 rounded-xl bg-indigo-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-indigo-600">
+                  Veure resum <Ic.Award s={18}/>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Resum ─────────────────────────────────────────────────────────────
+      if (phase==="summary") {
+        const validated = tasks.filter(t=>t.validated);
+        const notVal    = tasks.filter(t=>!t.validated);
+        const blks      = tasks.filter(t=>t.blocker);
+        const pct       = tasks.length>0?Math.round((validated.length/tasks.length)*100):0;
+        const totalEst  = tasks.reduce((a,t)=>a+(t.timeEstimate||0),0);
+        const totalReal = tasks.filter(t=>t.actualMinutes!=null).reduce((a,t)=>a+t.actualMinutes,0);
+        const tasksWithTime = tasks.filter(t=>t.timeEstimate&&t.actualMinutes!=null);
+
+        const motivMsg = pct===100
+          ? {text:"Sessió perfecta! Tot l'equip ha après totes les tasques. 🎉", color:"text-green-700", bg:"bg-green-50 border-green-200"}
+          : pct>=80
+          ? {text:"Molt bé! Quasi tot acabat. Les tasques pendents es reprendran la propera sessió.", color:"text-blue-700", bg:"bg-blue-50 border-blue-200"}
+          : pct>=50
+          ? {text:"Mig camí. Analitzeu on us heu encallat i per qué.", color:"text-orange-700", bg:"bg-orange-50 border-orange-200"}
+          : {text:"Sessió difícil. Parleu amb el professor sobre si les tasques eren massa grans.", color:"text-red-700", bg:"bg-red-50 border-red-200"};
+
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-violet-50 fade-in">
+            <div className="bg-indigo-500 text-white px-4 pt-6 pb-5">
+              <div className="max-w-lg mx-auto">
+                <h2 className="text-2xl font-extrabold">Resum de sessió</h2>
+                <p className="text-indigo-200 text-sm">{projectName} · {active.join(", ")}</p>
+              </div>
+            </div>
+
+            <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+              {/* Puntuació */}
+              <div className="bg-white rounded-2xl shadow p-6 text-center">
+                <div className={`text-7xl font-extrabold mb-2 ${pct>=80?"text-green-500":pct>=50?"text-orange-500":"text-red-400"}`}>{pct}%</div>
+                <p className="text-gray-600 font-semibold">tasques completades de veritat</p>
+                <p className="text-gray-400 text-sm mt-1">{validated.length} de {tasks.length} validades per tot l'equip</p>
+                {sessionValidated&&<div className="mt-4 bg-green-100 text-green-700 rounded-xl px-4 py-3 font-bold pop-in">✓ Sessió validada pel professor</div>}
+              </div>
+
+              {/* Comparació temps estimat vs real */}
+              {tasksWithTime.length>0&&(
+                <div className="bg-white rounded-2xl shadow p-4">
+                  <h3 className="font-bold text-gray-800 mb-1 flex items-center gap-2">
+                    <Ic.Clock s={18} c="text-indigo-500"/> Temps estimat vs. real
+                  </h3>
+                  {totalEst>0&&<p className="text-sm text-gray-500 mb-3">Total estimat: <span className="font-bold text-gray-700">{fmtMin(totalEst)}</span> · Total real: <span className="font-bold text-gray-700">{fmtMin(totalReal)}</span></p>}
+                  <div className="space-y-2">
+                    {tasksWithTime.map(t=>(
+                      <div key={t.id} className="flex items-center gap-2">
+                        <p className="text-sm text-gray-700 flex-1 min-w-0 truncate">{t.text}</p>
+                        <TimeComparison estimated={t.timeEstimate} actual={t.actualMinutes}/>
+                      </div>
+                    ))}
+                  </div>
+                  {tasksWithTime.length>=2&&(
+                    <p className="text-xs text-gray-400 mt-3 italic">
+                      {totalReal>totalEst*1.2?"Heu trigat més del previst. Penseu si les tasques eren massa grans.":totalReal<totalEst*0.8?"Heu anat més ràpid del previst. Podeu afegir més tasques la propera sessió!":"Les estimacions han estat força encertades. Bona feina!"}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Missatge motivador */}
+              <div className={`border rounded-2xl p-4 ${motivMsg.bg}`}>
+                <p className={`text-sm font-semibold ${motivMsg.color}`}>{motivMsg.text}</p>
+              </div>
+
+              {/* Reflexió */}
+              <div className="bg-white rounded-2xl shadow p-4">
+                <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                  <Ic.Target s={18} c="text-indigo-500"/> Reflexió d'equip (2 min)
+                </h3>
+                {["🙌 Quina tasca ha anat millor i per qué?","🔧 Canviarieu alguna cosa per a la propera sessió?","💡 Qui ha ajudat més al grup avui i com?"].map((q,i)=>(
+                  <div key={i} className="bg-indigo-50 rounded-xl px-4 py-3 mb-2"><p className="text-sm text-indigo-800 font-medium">{q}</p></div>
+                ))}
+              </div>
+
+              {/* Tasques completades */}
+              {validated.length>0&&(
+                <div className="bg-white rounded-2xl shadow p-4">
+                  <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2"><Ic.CheckCircle s={18} c="text-green-500"/> Completades ({validated.length})</h3>
+                  <div className="space-y-2">
+                    {validated.map(t=>(
+                      <div key={t.id} className="flex items-center gap-2">
+                        <Ic.Check s={14} c="text-green-500 flex-shrink-0"/>
+                        <span className="text-sm text-gray-700 flex-1">{t.text}</span>
+                        <span className="text-xs text-gray-400">{t.assignee}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Pendents */}
+              {notVal.length>0&&(
+                <div className="bg-white rounded-2xl shadow p-4">
+                  <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2"><Ic.Circle s={18} c="text-gray-400"/> Per a la propera sessió ({notVal.length})</h3>
+                  <div className="space-y-2">
+                    {notVal.map(t=>(
+                      <div key={t.id} className="flex items-center gap-2">
+                        <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${t.status===S.EN_CURS?"bg-orange-400":"bg-gray-300"}`}/>
+                        <span className="text-sm text-gray-600 flex-1">{t.text}</span>
+                        <span className="text-xs text-gray-400">{t.assignee}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Blocadors */}
+              {blks.length>0&&(
+                <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4">
+                  <h3 className="font-bold text-orange-700 mb-2 flex items-center gap-2"><Ic.Warn s={18}/> Blocadors</h3>
+                  <p className="text-xs text-orange-500 mb-2">Parleu-los amb el professor abans de la propera sessió.</p>
+                  {blks.map(t=><p key={t.id} className="text-sm text-orange-700"><span className="font-semibold">{t.assignee}:</span> {t.text}{t.blockerText&&<span className="text-orange-500"> — {t.blockerText}</span>}</p>)}
+                </div>
+              )}
+
+              {/* Guardar a l'historial */}
+              {!savedToHistory ? (
+                <button onClick={handleSaveToHistory} className="w-full py-3.5 rounded-xl bg-indigo-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-indigo-600">
+                  <Ic.History s={18}/> Guardar al historial del projecte
+                </button>
+              ) : (
+                <div className="w-full py-3.5 rounded-xl bg-green-100 text-green-700 font-bold text-center pop-in">
+                  ✓ Guardat a l'historial
+                </div>
+              )}
+
+              <div className="flex gap-3 pb-10">
+                <button onClick={()=>setShowHistory(true)} className="flex-1 py-3.5 rounded-xl border-2 border-gray-200 text-gray-600 font-semibold text-sm flex items-center justify-center gap-1">
+                  <Ic.BarChart s={16}/> Historial
+                </button>
+                <button onClick={reset} className="flex-1 py-3.5 rounded-xl bg-violet-500 text-white font-bold flex items-center justify-center gap-2 hover:bg-violet-600">
+                  <Ic.Reset s={16}/> Nova sessió
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return null;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<SprintTeam />);
+  </script>
+</body>
+</html>
